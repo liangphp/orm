@@ -88,6 +88,18 @@ class Db
     }
 
     /**
+     * 错误信息处理 数组转为字符串
+     * 
+     * @return [type] [description]
+     */
+    private function errorInfoChange()
+    {
+        $errorInfo = self::$pdo->errorInfo();
+
+        exit('ERROR ' . $errorInfo[1] . ' (' . $errorInfo[0] . '): ' . $errorInfo[2]);
+    }
+
+    /**
      * 指定查询数据表 完整数据表名
      * 
      * @return [type] [description]
