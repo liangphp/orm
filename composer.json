@@ -1,0 +1,14 @@
+{
+    "name": "liangphp/orm",
+    "description": "php orm",
+    "type": "library",
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "liang",
+            "email": "23426945@qq.com"
+        }
+    ],
+    "minimum-stability": "stable",
+    "require": {}
+}
