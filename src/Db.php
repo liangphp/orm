@@ -4,23 +4,24 @@ namespace bl;
 
 class Db
 {
-    //属性声明顺序不可变化,否则影响sql语句中关键字的顺序
+    private static $pdo;
+    private static $config;
     private static $table;//表名
-    public  $child;//子查询
-    private $join;//连接
     private $where;//条件
     private $whereOr;
+
+    
+    public  $child;//子查询
+    private $join;//连接
     private $between;//between and
     private $group;//分组
     private $having;//分组后操作
     private $order;//排序
     private $field;//字段,默认为*
     private $limit;//限制
-    public  $fetchSql;    
-    private static $pdo;
-    private static $prefix = 'u';
-    private $inc;
-    private static $config;
+    public  $fetchSql;
+    private $inc;  
+    
 
     /**
      * 构造方法 获取PDO对象
@@ -30,15 +31,20 @@ class Db
         try {
             if (! self::$pdo instanceof \PDO) {
 
-                self::checkConfig();
+                // 判断是否设置了数据库配置
+                if (is_null(self::$config)) {
+                    $config = self::defaultConfig();
+                } else {
+                    $config = self::$config;
+                }
 
-                $config = self::$config;
                 $dsn = $config['type'] . ':dbname=' . $config['database'] . ';host=' . $config['host'] . ';port=' . $config['port'];
+
                 $pdo = new \PDO($dsn, $config['username'], $config['password']);
                 self::$pdo = $pdo;
             }
         } catch (\PDOException $e) {
-            die($e->getMessage());
+            die('数据库连接失败: ' . $e->getMessage());
         }
     }
 
@@ -48,15 +54,23 @@ class Db
      * @param  array  $config [description]
      * @return [type]         [description]
      */
-    private static function defaultConfig(array $config = [])
+    private static function defaultConfig()
     {
         return [
-            'type'     => '',
-            'host'     => '',
-            'port'     => '',
-            'username' => '',
+            // 数据库类型
+            'type'     => 'mysql',
+            // 服务器地址
+            'host'     => '127.0.0.1',
+            // 端口号
+            'port'     => 3306,
+            // 用户名
+            'username' => 'root',
+            // 登陆密码
             'password' => '',
+            // 数据库名称
             'database' => '',
+            // 数据库表前缀
+            'prefix'   => '',
         ];
     }
 
@@ -67,24 +81,6 @@ class Db
     {
         // 配置数组合并
         self::$config = array_merge(self::defaultConfig(), $config);
-    }
-
-    /**
-     * 检测配置参数是否完整
-     * 
-     * @return [type] [description]
-     */
-    public static function checkConfig()
-    {
-        $arr = ['type', 'host', 'port', 'username', 'password', 'database'];
-
-        foreach ($arr as $value) {
-            if (empty(self::$config[$value])) {
-                echo '配置参数不完整<pre>';
-                var_export(self::$config);
-                die;
-            }
-        }
     }
 
     /**
@@ -118,7 +114,7 @@ class Db
      */
     public static function name(string $table = '')
     {
-        self::$table = '`' . self::$prefix . $table .'`';
+        self::$table = '`' . self::$config['prefix'] . $table .'`';
 
         return new self;
     }
@@ -134,6 +130,10 @@ class Db
      */
     public function where($field = '', $option = '', $value = '')
     {
+        if (is_string($field) && $value != '') {
+            $this->where[] = [$field, $option, $value];
+        }
+        
         if (is_string($field) && $value == '') {
             $value  = $option;
             $option = '=';
@@ -152,6 +152,8 @@ class Db
                 }
             }
         }
+
+
 
         return $this;
     }
@@ -200,7 +202,6 @@ class Db
      */
     private function getWhere($field = '', $option = '', $value = '')
     {   
-
         if (empty($this->where) && empty($this->whereOr)) return '';
 
         $str = '';
@@ -221,7 +222,6 @@ class Db
         }
             
         $str = rtrim($str, 'ANDOR ');
-            
 
         return $str;
     }
@@ -332,10 +332,7 @@ class Db
 
         $rows = self::$pdo->exec($sql);
 
-        if ($rows === false) {
-            var_dump(self::$pdo->errorInfo());
-            die;
-        }
+        if ($rows === false) $this->errorInfoChange();
 
         return $rows;
     }
@@ -358,11 +355,7 @@ class Db
 
         $rows = self::$pdo->exec($sql);
 
-        if ($rows === false) {
-            echo $sql . PHP_EOL;
-            var_dump(self::$pdo->errorInfo());
-            die;
-        }
+        if ($rows === false) $this->errorInfoChange();
 
         return $rows;
     }
@@ -431,8 +424,6 @@ class Db
     {
         $this->inc[$field] = $step;
 
-        var_dump($this->inc);
-
         return $this;
     }
 
@@ -443,22 +434,79 @@ class Db
      */
     public function update(array $data = [])
     {
-        $up = '';
-        foreach ($data as $key => $value) {
-            is_numeric($value) || $value = "'{$value}'";
-            $up .= "`{$key}`" . '=' . $value . ',';
+        if (!empty($this->inc)) {
+            // 自增操作
+            $str = '';
+            foreach ($this->inc as $key => $value) {
+                $str .= "`{$key}` = `{$key}` + {$value}, ";
+            }
+            $str = rtrim($str, ' ,');
+
+            $sql = 'UPDATE ' . self::$table . ' SET ' . $str;
+        } else {
+            // 普通的更新操作
+            $up = '';
+            foreach ($data as $key => $value) {
+                is_numeric($value) || $value = "'{$value}'";
+                $up .= "`{$key}`" . '=' . $value . ',';
+            }
+            $up = rtrim($up, ',');
+
+            $sql = 'UPDATE ' . self::$table . ' SET ' . $up;
         }
-        $up = rtrim($up, ',');
 
-        $sql = 'UPDATE ' . self::$table . ' SET ' . $up;
-
+        
+        // 判断有没有更新条件
         if (empty($this->getWhere())) {
             die('没有更新条件');
         } else {
             $sql .= ' WHERE ' . $this->getWhere();
         }
 
-       echo $sql;
+
+        // 查看构建的SQL语句
+        if ($this->fetchSql === true) return $sql;
+
+        // 执行更新操作
+        $rows = self::$pdo->exec($sql);
+
+        // 输出错误信息
+        if ($rows === false) $this->errorInfoChange();
+
+        return $rows;
+    }
+
+    /**
+     * 删除数据
+     * 
+     * @return [type] [description]
+     */
+    public function delete(bool $delAll = false)
+    {
+        if ($delAll === true) {
+            $sql = 'DELETE FROM ' . self::$table;
+        } else {
+
+            $sql = 'DELETE FROM ' . self::$table;
+
+            // 判断有没有更新条件
+            if (empty($this->getWhere())) {
+                die('没有更新条件');
+            } else {
+                $sql .= ' WHERE ' . $this->getWhere();
+            }
+        }
+
+        // 查看构建的SQL语句
+        if ($this->fetchSql === true) return $sql;
+
+        // 执行删除操作
+        $rows = self::$pdo->exec($sql);
+
+        // 输出错误信息
+        if ($rows === false) $this->errorInfoChange();
+
+        return $rows;
     }
 
     /**
